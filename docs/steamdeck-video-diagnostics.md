@@ -1,13 +1,14 @@
 # Steam Deck 视频诊断 / Video diagnostics
 
-This diagnostic branch adds opt-in counters to the native viewer. Set
+This branch includes opt-in counters for the native viewer. Set
 `UU_VIEWER_VIDEO_DIAGNOSTICS=1` before launching the viewer. The packaged Steam Deck
 launcher sets this automatically and enables the network panel for that run.
-This is an instrumented build, not a demonstrated frame-rate fix.
+See [the scheduling fix](steamdeck-video-scheduling.md) for the subsequently identified
+queue-overflow defect and its regression tests. Post-fix hardware acceptance is pending.
 
 设置 `UU_VIEWER_VIDEO_DIAGNOSTICS=1` 可开启诊断。测试包会自动开启，并保留原生手柄及震动。
-当前安装包使用外部 FFmpeg 解码；不改变帧率请求、解码参数或 Windows 显示配置。
-诊断结果尚需 Steam Deck 实机采集，不能据此宣称问题已修复或支持 144 FPS。
+当前安装包使用外部 FFmpeg 解码；保留帧率请求、解码参数及 Windows 显示配置逻辑。
+已增加批量消费修正，修复后表现尚需 Steam Deck 实机验收，不能宣称支持 144 Hz 显示。
 
 | Field / 字段 | Meaning / 含义 |
 | --- | --- |
@@ -38,4 +39,4 @@ No desktop frames, input, clipboard data, account IDs or authentication material
 are recorded by this feature. Existing upstream stderr must still be filtered by
 the package launcher; do not publish unfiltered upstream logs.
 
-The publication handoff/main branch is unchanged. This branch is for diagnosis.
+The publication handoff/main branch is unchanged. This branch is for the scheduling fix and diagnosis.

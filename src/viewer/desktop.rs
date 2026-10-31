@@ -3,7 +3,9 @@ use std::sync::{Arc, atomic::{AtomicBool,AtomicU32,Ordering}};
 #[derive(Clone)]
 pub struct Desktop { pub units:Latest<super::media::AccessUnit>, pub pli:Arc<AtomicBool>, pub reset:Arc<AtomicBool>, pub ssrc:Arc<AtomicU32> }
 impl Default for Desktop {
-    fn default()->Self {Self{units:Latest::new(3),pli:Arc::new(AtomicBool::new(false)),reset:Arc::new(AtomicBool::new(false)),ssrc:Arc::new(AtomicU32::new(0))}}
+    // A bounded burst allowance, not a playback delay: each tick consumes queued units immediately.
+    // Eight units cover a short UI redraw at 144 fps; persistent overload still requests recovery.
+    fn default()->Self {Self{units:Latest::new(8),pli:Arc::new(AtomicBool::new(false)),reset:Arc::new(AtomicBool::new(false)),ssrc:Arc::new(AtomicU32::new(0))}}
 }
 /// `content` is the source picture size inside the (possibly padded) RGB canvas; None = full frame.
 pub struct Frame { pub width:u32, pub height:u32, pub rgb:Vec<u8>, pub content:Option<(u32,u32)> }
@@ -55,10 +57,23 @@ impl KeyGate {
 pub fn drain(decoder:&mut dyn Decoder,sink:&mut dyn FrameSink)->Result<(),String> {
     let mut frames=decoder.poll();
     super::video_diagnostics::add(super::video_diagnostics::DRAIN_DROP,frames.len().saturating_sub(1) as u64);
-    if let Some(frame)=frames.pop() {STATS[1].fetch_add(1,Ordering::Relaxed);sink.present(&frame)?;super::video_diagnostics::add(super::video_diagnostics::SHOWN,1);}
+    if let Some(frame)=frames.pop() {present(sink,&frame)?;}
     Ok(())
 }
 pub fn display(decoder:&mut dyn Decoder,sink:&mut dyn FrameSink,au:&[u8],codec:super::media::Codec,pli:&AtomicBool)->Result<(),String> {
+    for frame in decode(decoder,au,codec,pli)? {present(sink,&frame)?;}
+    Ok(())
+}
+fn present(sink:&mut dyn FrameSink,frame:&Frame)->Result<(),String>{
+    sink.present(frame)?;
+    super::video_diagnostics::add(super::video_diagnostics::SHOWN,1);
+    // Local acceptance aid; preserve the existing opt-in image dump behavior.
+    if STATS[1].fetch_add(1,Ordering::Relaxed)==std::env::var("UU_VIEWER_DUMP_FRAME_INDEX").ok().and_then(|v|v.parse().ok()).unwrap_or(4u64) { if let Some(path)=std::env::var_os("UU_VIEWER_DUMP_FRAME") {
+        let mut ppm=format!("P6\n{} {}\n255\n",frame.width,frame.height).into_bytes();ppm.extend_from_slice(&frame.rgb);let _=std::fs::write(path,ppm);
+    }}
+    Ok(())
+}
+fn decode(decoder:&mut dyn Decoder,au:&[u8],codec:super::media::Codec,pli:&AtomicBool)->Result<Vec<Frame>,String> {
     let units=STATS[0].fetch_add(1,Ordering::Relaxed)+1;
     super::video_diagnostics::add(super::video_diagnostics::FED,1);
     // A later session can join a clean stream with no IDR in flight (#124): keep asking until a frame shows.
@@ -71,16 +86,42 @@ pub fn display(decoder:&mut dyn Decoder,sink:&mut dyn FrameSink,au:&[u8],codec:s
         use std::io::Write; if let Ok(mut f)=std::fs::OpenOptions::new().create(true).append(true).open(path){let _=f.write_all(au);}
     }}
     match decoder.decode(au) {
-        Ok(frames)=>{for frame in frames {
-            sink.present(&frame)?;
-            super::video_diagnostics::add(super::video_diagnostics::SHOWN,1);
-            // Local acceptance aid: UU_VIEWER_DUMP_FRAME=path writes the 5th frame as PPM (owner's own screen).
-            if STATS[1].fetch_add(1,Ordering::Relaxed)==std::env::var("UU_VIEWER_DUMP_FRAME_INDEX").ok().and_then(|v|v.parse().ok()).unwrap_or(4u64) { if let Some(path)=std::env::var_os("UU_VIEWER_DUMP_FRAME") {
-                let mut ppm=format!("P6\n{} {}\n255\n",frame.width,frame.height).into_bytes();ppm.extend_from_slice(&frame.rgb);let _=std::fs::write(path,ppm);
-            }}
-        }Ok(())},
-        Err(_)=>{super::video_diagnostics::add(super::video_diagnostics::ERRORS,1);STATS[2].fetch_add(1,Ordering::Relaxed);decoder.reset();pli.store(true,Ordering::Release);Ok(())},
+        Ok(frames)=>Ok(frames),
+        Err(_)=>{super::video_diagnostics::add(super::video_diagnostics::ERRORS,1);STATS[2].fetch_add(1,Ordering::Relaxed);decoder.reset();pli.store(true,Ordering::Release);Ok(Vec::new())},
     }
+}
+
+fn keep_latest(slot:&mut Option<Frame>,frame:Frame){
+    if slot.replace(frame).is_some(){super::video_diagnostics::add(super::video_diagnostics::DRAIN_DROP,1);}
+}
+
+/// Decode a bounded FIFO batch, then present only the newest decoded picture. Dropping compressed
+/// P-frames destroys references; skipping already-decoded RGB pictures does not. One AU per 8 ms
+/// tick capped consumption at 125/s: a real Deck receiving 144/s repeatedly overflowed and gated
+/// ~120 units/s while waiting for a key frame. Never tie compressed consumption to presentation.
+pub fn pump(desktop:&Desktop,decoder:&mut dyn Decoder,sink:&mut dyn FrameSink,gate:&mut KeyGate)->Result<Option<super::media::Codec>,String>{
+    let started=std::time::Instant::now();let mut newest=None;let mut codec=None;
+    // Limit work to preserve input polling. This bounds calls; a synchronous decoder call itself
+    // can still block on FFmpeg and is measured separately by the pipe-time diagnostics.
+    for _ in 0..8 {
+        let Some(au)=desktop.units.pop() else{break};
+        if desktop.reset.swap(false,Ordering::AcqRel){
+            super::video_diagnostics::add(super::video_diagnostics::RESETS,1);
+            decoder.reset();gate.arm();
+        }
+        if !gate.admit(au.codec,&au.data){
+            super::video_diagnostics::add(super::video_diagnostics::GATE_DROP,1);
+            desktop.pli.store(true,Ordering::Release);
+        }else{
+            decoder.set_codec(au.codec)?;codec=Some(au.codec);
+            for frame in decode(decoder,&au.data,au.codec,&desktop.pli)? {keep_latest(&mut newest,frame);}
+        }
+        if started.elapsed()>=std::time::Duration::from_millis(4){break}
+    }
+    // Also collect asynchronous FFmpeg output on idle ticks, without waiting for another AU.
+    for frame in decoder.poll(){keep_latest(&mut newest,frame);}
+    if let Some(frame)=newest {present(sink,&frame)?;}
+    Ok(codec)
 }
 #[cfg(test)] mod tests {
     #[test] fn key_frames_by_nal_type(){
@@ -111,4 +152,60 @@ pub fn display(decoder:&mut dyn Decoder,sink:&mut dyn FrameSink,au:&[u8],codec:s
         assert!(!(1..=90).any(|n|wants_key_frame(n,1)));
     }
     #[test] fn decode_error_requests_pli_and_recovers(){let mut d=Mock(true);let mut s=Sink(0);let p=AtomicBool::new(false);display(&mut d,&mut s,&[],crate::viewer::media::Codec::H264,&p).unwrap();assert!(p.load(Ordering::Acquire));display(&mut d,&mut s,&[],crate::viewer::media::Codec::H264,&p).unwrap();assert_eq!(s.0,1);}
+
+    fn numbered_au(n:u32,key:bool)->super::super::media::AccessUnit{
+        let mut data=vec![0,0,0,1,if key {0x65}else{0x61}];data.extend(n.to_le_bytes());
+        super::super::media::AccessUnit{codec:super::super::media::Codec::H264,data}
+    }
+    fn numbered_frame(n:u32)->Frame{Frame{width:1,height:1,rgb:vec![n as u8,0,0],content:None}}
+    #[derive(Default)] struct RecordingDecoder {fed:Vec<u32>,resets:usize,pending:Vec<Frame>}
+    impl Decoder for RecordingDecoder {
+        fn set_codec(&mut self,_:super::super::media::Codec)->Result<(),String>{Ok(())}
+        fn reset(&mut self){self.resets+=1;}
+        fn decode(&mut self,au:&[u8])->Result<Vec<Frame>,String>{let n=u32::from_le_bytes(au[5..9].try_into().unwrap());self.fed.push(n);Ok(vec![numbered_frame(n)])}
+        fn poll(&mut self)->Vec<Frame>{std::mem::take(&mut self.pending)}
+    }
+    #[derive(Default)] struct RecordingSink(Vec<u8>);
+    impl FrameSink for RecordingSink {fn present(&mut self,frame:&Frame)->Result<(),String>{self.0.push(frame.rgb[0]);Ok(())}}
+
+    #[test] fn receives_144_per_second_with_125_input_ticks_without_compressed_drops(){
+        // Virtual time: eight seconds, 144 incoming access units/s, one input tick every 8 ms.
+        // The old one-pop policy overflows even if its queue is enlarged to eight slots.
+        let desktop=Desktop::default();let old=Latest::new(8);
+        let mut decoder=RecordingDecoder::default();let mut sink=RecordingSink::default();let mut gate=KeyGate::new();
+        let(mut received,mut old_drops,mut new_drops)=(0,0,0);
+        for tick in 1..=1000 {
+            let due=tick*144/125;
+            while received<due {
+                received+=1;
+                old_drops+=usize::from(old.push(numbered_au(received,false)));
+                new_drops+=usize::from(desktop.units.push(numbered_au(received,false)));
+            }
+            let _=old.pop();
+            pump(&desktop,&mut decoder,&mut sink,&mut gate).unwrap();
+        }
+        // One final drain tolerates a scheduler preemption at the time-budget boundary.
+        pump(&desktop,&mut decoder,&mut sink,&mut gate).unwrap();
+        assert!(old_drops>100,"the fixture must reproduce the old sustained overflow");
+        assert_eq!(new_drops,0);
+        assert_eq!(decoder.fed,(1..=1152).collect::<Vec<_>>(),"every compressed reference arrives in FIFO order");
+        assert_eq!(decoder.resets,0);
+        assert!(sink.0.len()<=1001,"present at most once per tick, not once per access unit");
+    }
+    #[test] fn batch_presents_newest_rgb_and_idle_tick_polls_async_output(){
+        let desktop=Desktop::default();for n in 1..=3{desktop.units.push(numbered_au(n,false));}
+        let mut decoder=RecordingDecoder::default();decoder.pending.push(numbered_frame(4));
+        let mut sink=RecordingSink::default();let mut gate=KeyGate::new();
+        pump(&desktop,&mut decoder,&mut sink,&mut gate).unwrap();
+        assert_eq!(decoder.fed,vec![1,2,3]);assert_eq!(sink.0,vec![4]);
+        decoder.pending.push(numbered_frame(5));
+        pump(&desktop,&mut decoder,&mut sink,&mut gate).unwrap();assert_eq!(sink.0,vec![4,5]);
+    }
+    #[test] fn actual_compressed_loss_still_waits_for_recovery(){
+        let desktop=Desktop::default();desktop.reset.store(true,Ordering::Release);
+        for (n,key) in [(1,false),(2,false),(3,true),(4,false)]{desktop.units.push(numbered_au(n,key));}
+        let mut decoder=RecordingDecoder::default();let mut sink=RecordingSink::default();let mut gate=KeyGate::new();
+        pump(&desktop,&mut decoder,&mut sink,&mut gate).unwrap();
+        assert_eq!(decoder.fed,vec![3,4]);assert_eq!(decoder.resets,1);assert_eq!(sink.0,vec![4]);assert!(desktop.pli.load(Ordering::Acquire));
+    }
 }
