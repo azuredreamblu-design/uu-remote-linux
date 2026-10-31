@@ -4,6 +4,8 @@
 
 ## This fork: native Steam Deck gamepad and rumble
 
+This diagnostic branch additionally provides opt-in [video-stage counters and numeric logs](docs/steamdeck-video-diagnostics.md) for low-frame-rate investigation; it is not a demonstrated fix for the 30 FPS issue.
+
 Forked from **[VallierDev/uu-remote-linux](https://github.com/VallierDev/uu-remote-linux)**. This fork extends the upstream experimental Linux viewer with Steam Deck gamepad input and rumble feedback. Credit for the original project remains with its authors and contributors; the **GPL-3.0-or-later** license is preserved.
 
 **Codex attribution:** **OpenAI Codex assisted with analysis, implementation, tests and documentation** for this fork's gamepad and rumble changes. [azuredreamblu-design](https://github.com/azuredreamblu-design) supplied requirements and performed Windows + Steam Deck hardware testing. This is not an official NetEase or OpenAI project and does not imply upstream endorsement or acceptance.

@@ -70,7 +70,12 @@ impl Cli {
             loop {
                 let mut frame=vec![0;size];
                 if output.read_exact(&mut frame).is_err() {break;}
-                match tx.try_send((width,height,frame)) { Ok(())|Err(std::sync::mpsc::TrySendError::Full(_))=>{}, Err(_)=>break }
+                super::video_diagnostics::add(super::video_diagnostics::RGB,1);
+                match tx.try_send((width,height,frame)) {
+                    Ok(())=>{},
+                    Err(std::sync::mpsc::TrySendError::Full(_))=>super::video_diagnostics::add(super::video_diagnostics::RGB_DROP,1),
+                    Err(_)=>break
+                }
             }
         }).map_err(|e|format!("Decoder reader: {e}"))?;
         Ok(Self{child,input:Some(input),codec,frames,fixed,source,resized})
@@ -135,7 +140,10 @@ impl Decoder for Cli {
         // The raw-stream parser ends an access unit only when the next one starts; an access unit
         // delimiter right after it releases the picture now instead of one remote frame later.
         let delimiter:&[u8]=match self.codec {Codec::H264=>&[0,0,0,1,0x09,0xf0],Codec::H265=>&[0,0,0,1,0x46,0x01,0x50]};
-        input.write_all(au).and_then(|_|input.write_all(delimiter)).and_then(|_|input.flush()).map_err(|_|"ffmpeg decoder exited")?;
+        {
+            let _time=super::video_diagnostics::Span::new(super::video_diagnostics::PIPE);
+            input.write_all(au).and_then(|_|input.write_all(delimiter)).and_then(|_|input.flush()).map_err(|_|"ffmpeg decoder exited")?;
+        }
         self.take_frames()
     }
     fn poll(&mut self)->Vec<Frame> {self.take_frames().unwrap_or_default()}

@@ -4,6 +4,8 @@
 
 ## 本 fork：Steam Deck 原生手柄与震动
 
+本诊断分支另提供可选的[视频分阶段计数与安全日志](docs/steamdeck-video-diagnostics.md)，用于定位低帧率；尚未证明能解决 30 FPS 问题。
+
 本仓库 fork 自 **[VallierDev/uu-remote-linux](https://github.com/VallierDev/uu-remote-linux)**，在原项目的实验性 Linux 控制端上增加 Steam Deck 手柄输入和震动回传。原作者及上游贡献者拥有原项目的贡献署名；沿用 **GPL-3.0-or-later** 许可。
 
 **Codex 修改说明：** 本 fork 的手柄、震动、相关测试及说明由 **OpenAI Codex 协助分析、编写和编辑**；[azuredreamblu-design](https://github.com/azuredreamblu-design) 提供需求并在自己的 Windows + Steam Deck 上实机测试。不是网易或 OpenAI 官方项目，也不代表上游已经合并或认可这些改动。

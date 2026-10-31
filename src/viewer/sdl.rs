@@ -19,11 +19,16 @@ impl Window {
         let name=super::device_label(std::env::var("UU_VIEWER_DEVICE_NAME").ok().as_deref()).to_owned();
         let window=video.window(&format!("{name} · {}",crate::i18n::s("UU 远程 Linux 控制端","UU Remote Linux viewer")),1280,720).position_centered().resizable().build().map_err(|_|"Window creation failed")?;
         let mut canvas=window.into_canvas().build().map_err(|_|"Renderer creation failed")?;
+        if super::video_diagnostics::enabled(){
+            let hz=canvas.window().display_index().ok().and_then(|i|video.current_display_mode(i).ok()).map_or(0,|m|m.refresh_rate.max(0));
+            eprintln!("DECKPAD_VIDEO_RENDERER flags={} display_hz={hz}",canvas.info().flags);
+        }
         // Wayland maps a toplevel only after its first buffer; without this the window stays
         // invisible until the first decoded frame, which a stalled stream never delivers.
         canvas.set_draw_color(LOADING_BG);canvas.clear();canvas.present();
         let scale=std::env::var("UU_VIEWER_UI_SCALE").ok().and_then(|v|v.parse::<f32>().ok()).filter(|v|(0.5..=4.).contains(v)).unwrap_or(1.);
         let mut state=hud::State::default();hud::load_prefs(&mut state);
+        if super::video_diagnostics::enabled(){state.stats=true;}
         let now=std::time::Instant::now();
         let chrome=Chrome{font:hud::load_font(),scale,state,menu:hud::Menu::default(),net:None,tab_hover:false,tab_down:false,commands:Vec::new(),started:now,last_loading:now-std::time::Duration::from_secs(1),
             title:crate::tr!("正在连接 {name}","Connecting to {name}"),stage:crate::i18n::s("正在连接远端设备…","Contacting the remote device…").into(),labels:Default::default(),menu_cache:None};
@@ -247,6 +252,7 @@ impl Window {
         self.canvas.present();
     }
     fn draw(&mut self,frame:&Frame)->Result<(),String>{
+        let _time=super::video_diagnostics::Span::new(super::video_diagnostics::DRAW);
         // Pad bars belong to the decoded canvas, not the remote picture: viewport and input use the
         // content aspect, and only the content sub-rectangle of the texture is drawn.
         let content=frame.content.unwrap_or((frame.width,frame.height));
@@ -416,6 +422,8 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
     let started=std::time::Instant::now();let mut seq=3_000_000u64;
     let mut last=(0u64,0u64,0u64,0u64,std::time::Instant::now());
     let mut codec_name="--";
+    let mut video_reporter=super::video_diagnostics::Reporter::new();
+    let mut previous_tick=std::time::Instant::now();
     // After a local drop the decoder has no reference picture; P-frames would only smear blocks.
     let mut key_gate=super::desktop::KeyGate::new();
     let mut next_thumb=std::time::Instant::now()+std::time::Duration::from_secs(5);
@@ -465,7 +473,8 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
                 let size=window.last_frame.as_ref().map_or((0,0),|f|f.content.unwrap_or((f.width,f.height)));
                 window.set_net(hud::NetStats{elapsed:started.elapsed().as_secs(),route,fps:((now.0-last.0) as f64/secs).round() as u32,
                     kbps:(now.1-last.1) as f64*8./1000./secs,rtt_ms,loss:if expected>0 {lost as f64*100./expected as f64} else {0.},size,
-                    codec:codec_name,chroma:window.state().chroma});
+                    codec:codec_name,chroma:window.state().chroma,
+                    video:video_reporter.sample(window.state().fps,window.focused,window.chrome.menu.open)});
                 last=now;
                 if std::time::Instant::now()>=next_thumb { if let Some(frame)=window.last_frame.as_ref() {
                     if let Err(e)=super::thumbs::save(device,frame){log::debug!("Viewer thumbnail not saved: {e}");}
@@ -473,12 +482,18 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
                 }}
             },
             _=tick.tick()=>{
+                super::video_diagnostics::tick_gap(&mut previous_tick);
                 if let Some(playback)=audio.as_mut(){if playback.pump().is_err(){log::warn!("Viewer audio playback stopped");audio=None;}}
                 let (quit,mut messages)=window.poll(&mut input);
                 if !window.has_picture() {window.loading_frame(false);}
                 if !restored && session.peer.ready(super::rtc::ReadyPolicy::EchoOnly,false) {restored=true;window.restore_remote_settings();}
                 for command in window.take_commands() {
                     seq+=1;
+                    if super::video_diagnostics::enabled(){match command {
+                        hud::Command::Fps(f)=>eprintln!("DECKPAD_VIDEO_REQUEST fps={f}"),
+                        hud::Command::Chroma(c)=>eprintln!("DECKPAD_VIDEO_REQUEST chroma={c}"),
+                        _=>{},
+                    }}
                     let control=match command {
                         hud::Command::Quality(q)=>Some(super::wire::capture_setting(seq,&[(2,q)])),
                         hud::Command::Fps(f)=>Some(super::wire::capture_setting(seq,&[(1,match f{30=>1,60=>2,90=>3,_=>4}),(18,u64::from(f))])),
@@ -553,8 +568,8 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
                 if quit{return Ok(())}
                 // At most one AU per iteration keeps local event polling responsive.
                 if let Some(au)=session.peer.desktop.units.pop(){
-                    if session.peer.desktop.reset.swap(false,std::sync::atomic::Ordering::AcqRel){decoder.reset();key_gate.arm();}
-                    if !key_gate.admit(au.codec,&au.data) {session.peer.desktop.pli.store(true,std::sync::atomic::Ordering::Release);super::desktop::drain(decoder,window)?;}
+                    if session.peer.desktop.reset.swap(false,std::sync::atomic::Ordering::AcqRel){super::video_diagnostics::add(super::video_diagnostics::RESETS,1);decoder.reset();key_gate.arm();}
+                    if !key_gate.admit(au.codec,&au.data) {super::video_diagnostics::add(super::video_diagnostics::GATE_DROP,1);session.peer.desktop.pli.store(true,std::sync::atomic::Ordering::Release);super::desktop::drain(decoder,window)?;}
                     else {
                         decoder.set_codec(au.codec)?;
                         codec_name=if au.codec==super::media::Codec::H265 {"H.265"} else {"H.264"};

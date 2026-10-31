@@ -11,6 +11,7 @@ pub mod media;
 pub mod audio;
 pub mod input;
 pub mod desktop;
+pub mod video_diagnostics;
 #[cfg(feature="viewer-ffmpeg")] pub mod decoder;
 #[cfg(any(test,feature="viewer-sdl"))] pub mod decoder_cli;
 #[cfg(uu_gtk)] pub mod ui;

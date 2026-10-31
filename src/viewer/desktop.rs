@@ -53,11 +53,14 @@ impl KeyGate {
 }
 /// Shows the newest frame a decoder finished between access units.
 pub fn drain(decoder:&mut dyn Decoder,sink:&mut dyn FrameSink)->Result<(),String> {
-    if let Some(frame)=decoder.poll().pop() {STATS[1].fetch_add(1,Ordering::Relaxed);sink.present(&frame)?;}
+    let mut frames=decoder.poll();
+    super::video_diagnostics::add(super::video_diagnostics::DRAIN_DROP,frames.len().saturating_sub(1) as u64);
+    if let Some(frame)=frames.pop() {STATS[1].fetch_add(1,Ordering::Relaxed);sink.present(&frame)?;super::video_diagnostics::add(super::video_diagnostics::SHOWN,1);}
     Ok(())
 }
 pub fn display(decoder:&mut dyn Decoder,sink:&mut dyn FrameSink,au:&[u8],codec:super::media::Codec,pli:&AtomicBool)->Result<(),String> {
     let units=STATS[0].fetch_add(1,Ordering::Relaxed)+1;
+    super::video_diagnostics::add(super::video_diagnostics::FED,1);
     // A later session can join a clean stream with no IDR in flight (#124): keep asking until a frame shows.
     if wants_key_frame(units,STATS[1].load(Ordering::Relaxed)) {
         pli.store(true,Ordering::Release);
@@ -70,12 +73,13 @@ pub fn display(decoder:&mut dyn Decoder,sink:&mut dyn FrameSink,au:&[u8],codec:s
     match decoder.decode(au) {
         Ok(frames)=>{for frame in frames {
             sink.present(&frame)?;
+            super::video_diagnostics::add(super::video_diagnostics::SHOWN,1);
             // Local acceptance aid: UU_VIEWER_DUMP_FRAME=path writes the 5th frame as PPM (owner's own screen).
             if STATS[1].fetch_add(1,Ordering::Relaxed)==std::env::var("UU_VIEWER_DUMP_FRAME_INDEX").ok().and_then(|v|v.parse().ok()).unwrap_or(4u64) { if let Some(path)=std::env::var_os("UU_VIEWER_DUMP_FRAME") {
                 let mut ppm=format!("P6\n{} {}\n255\n",frame.width,frame.height).into_bytes();ppm.extend_from_slice(&frame.rgb);let _=std::fs::write(path,ppm);
             }}
         }Ok(())},
-        Err(_)=>{STATS[2].fetch_add(1,Ordering::Relaxed);decoder.reset();pli.store(true,Ordering::Release);Ok(())},
+        Err(_)=>{super::video_diagnostics::add(super::video_diagnostics::ERRORS,1);STATS[2].fetch_add(1,Ordering::Relaxed);decoder.reset();pli.store(true,Ordering::Release);Ok(())},
     }
 }
 #[cfg(test)] mod tests {

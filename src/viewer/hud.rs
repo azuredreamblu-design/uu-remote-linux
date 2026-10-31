@@ -107,10 +107,10 @@ pub fn label_layer(font: Option<&FontVec>, text: &str, size: f32, c: Rgba) -> La
 // ---------------------------------------------------------------- network status
 
 #[derive(Default, Clone, PartialEq)]
-pub struct NetStats { pub elapsed: u64, pub route: String, pub fps: u32, pub kbps: f64, pub rtt_ms: Option<u32>, pub loss: f64, pub size: (u32, u32), pub codec: &'static str, pub chroma: u32 }
+pub struct NetStats { pub elapsed: u64, pub route: String, pub fps: u32, pub kbps: f64, pub rtt_ms: Option<u32>, pub loss: f64, pub size: (u32, u32), pub codec: &'static str, pub chroma: u32, pub video:Option<super::video_diagnostics::Rates> }
 pub fn stats_lines(n: &NetStats) -> Vec<String> {
     let rate = if n.kbps >= 1000. { format!("{:.1} Mbps", n.kbps / 1000.) } else { format!("{:.0} Kbps", n.kbps) };
-    vec![
+    let mut lines=vec![
         format!("{:02}:{:02}:{:02}", n.elapsed / 3600, n.elapsed / 60 % 60, n.elapsed % 60),
         if n.route.is_empty() { "--".into() } else { n.route.clone() },
         format!("{} fps · {}", n.fps, n.codec),
@@ -118,7 +118,12 @@ pub fn stats_lines(n: &NetStats) -> Vec<String> {
         n.rtt_ms.map_or_else(|| "RTT --".into(), |r| format!("RTT {r} ms")),
         format!("{} {:.1}%", s("丢包", "Loss"), n.loss),
         format!("{}×{} · {}", n.size.0, n.size.1, if n.chroma == 3 { "4:4:4" } else { "4:2:0" }),
-    ]
+    ];
+    if let Some(v)=&n.video {
+        lines.push(format!("{} {}/{}/{} fps",s("接收/解码/显示","Recv/decode/show"),v.rx,v.decoded,v.shown));
+        lines.push(format!("{} {} / {}",s("请求/主机回报","Request/host report"),v.requested,v.host_fps.map_or_else(||"--".into(),|f|f.to_string())));
+    }
+    lines
 }
 pub fn stats_layer(font: Option<&FontVec>, lines: &[String], scale: f32) -> Layer {
     let size = 13. * scale;
@@ -366,13 +371,13 @@ fn prefs_path() -> std::path::PathBuf { crate::config::path().parent().map_or_el
         let st=State{stats:true,..State::default()};
         for cat in [1usize,3,4] {let (l,_)=menu_layer(font,&st,&Menu{open:true,category:cat,hover:Some(Hit::Option(cat,1)),dragging:false},1.);save(&format!("menu{cat}.png"),&l,[200,200,210]);}
         save("tab.png",&tab_layer(font,1.,false),[230,230,230]);
-        let n=NetStats{elapsed:57,route:"UDP · relay".into(),fps:60,kbps:8420.,rtt_ms:Some(36),loss:0.,size:(1920,1080),codec:"H.265",chroma:1};
+        let n=NetStats{elapsed:57,route:"UDP · relay".into(),fps:60,kbps:8420.,rtt_ms:Some(36),loss:0.,size:(1920,1080),codec:"H.265",chroma:1,video:None};
         save("stats.png",&stats_layer(font,&stats_lines(&n),1.),[230,230,230]);
         save("spinner.png",&spinner(0.3,56),[17,19,24]);
         save("title.png",&label_layer(font,"Connecting to PUNOSEVAC",20.,[240,242,245,255]),[17,19,24]);
     }
     #[test] fn stats_lines_format_numbers(){
-        let n=NetStats{elapsed:3723,route:"UDP · relay".into(),fps:60,kbps:8420.,rtt_ms:Some(36),loss:0.25,size:(1920,1080),codec:"H.265",chroma:3};
+        let n=NetStats{elapsed:3723,route:"UDP · relay".into(),fps:60,kbps:8420.,rtt_ms:Some(36),loss:0.25,size:(1920,1080),codec:"H.265",chroma:3,video:None};
         let l=stats_lines(&n);assert_eq!(l[0],"01:02:03");assert_eq!(l[3],"8.4 Mbps");assert_eq!(l[4],"RTT 36 ms");assert!(l[6].ends_with("4:4:4"));
     }
 }

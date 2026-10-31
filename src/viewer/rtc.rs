@@ -150,8 +150,14 @@ impl Peer {
                         },
                         _=tick.tick()=>{if !video {continue} receiver.expire()},
                     };
-                    if output.pli {desktop.reset.store(true,Ordering::Release);desktop.pli.store(true,Ordering::Release);}
-                    for au in output.units {if desktop.units.push(super::media::AccessUnit{codec:receiver.codec(),data:au}) {desktop.reset.store(true,Ordering::Release);desktop.pli.store(true,Ordering::Release);}}
+                    if output.pli {super::video_diagnostics::add(super::video_diagnostics::PLI,1);desktop.reset.store(true,Ordering::Release);desktop.pli.store(true,Ordering::Release);}
+                    for au in output.units {
+                        super::video_diagnostics::add(super::video_diagnostics::RX,1);
+                        if desktop.units.push(super::media::AccessUnit{codec:receiver.codec(),data:au}) {
+                            super::video_diagnostics::add(super::video_diagnostics::AU_DROP,1);
+                            desktop.reset.store(true,Ordering::Release);desktop.pli.store(true,Ordering::Release);
+                        }
+                    }
                     if desktop.pli.load(Ordering::Acquire) && last_pli.elapsed()>=std::time::Duration::from_millis(250) {
                         desktop.pli.swap(false,Ordering::AcqRel);
                         if let Some(pc)=weak_pc.upgrade() {
@@ -211,6 +217,7 @@ impl Peer {
                     if index==0 {
                         feedback.receive(&message.data);
                         let (codecs,chroma)=wire::media_control(&message.data);
+                        super::video_diagnostics::control(&message.data);
                         if let Some(codecs)=codecs {state.encoder_codecs.store(codecs,Ordering::Release);}
                         if let Some(chroma)=chroma {
                             if state.chroma.swap(chroma,Ordering::AcqRel)!=chroma {log::info!("Viewer capture sync: chroma={chroma}");}
