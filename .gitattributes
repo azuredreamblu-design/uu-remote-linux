@@ -1,0 +1,3 @@
+
+# Keep Windows test scripts usable after checkout.
+/contrib/deckpad/*.cmd text eol=crlf

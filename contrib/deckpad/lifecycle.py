@@ -91,4 +91,3 @@ def stop_desktops(group, viewer, timeout=8):
             note("DESKTOP_CLEANUP_TIMEOUT")
             break
         time.sleep(0.05)
-

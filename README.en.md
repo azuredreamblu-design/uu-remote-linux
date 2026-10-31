@@ -2,6 +2,30 @@
 
 [简体中文](README.md) | **English**
 
+## This fork: native Steam Deck gamepad and rumble
+
+Forked from **[VallierDev/uu-remote-linux](https://github.com/VallierDev/uu-remote-linux)**. This fork extends the upstream experimental Linux viewer with Steam Deck gamepad input and rumble feedback. Credit for the original project remains with its authors and contributors; the **GPL-3.0-or-later** license is preserved.
+
+**Codex attribution:** **OpenAI Codex assisted with analysis, implementation, tests and documentation** for this fork's gamepad and rumble changes. [azuredreamblu-design](https://github.com/azuredreamblu-design) supplied requirements and performed Windows + Steam Deck hardware testing. This is not an official NetEase or OpenAI project and does not imply upstream endorsement or acceptance.
+
+- Buttons, D-pad, both sticks and triggers use the existing UU desktop connection.
+- Native `gpd_connect`, `gpd_update` and `gpd_disconnect` messages replace the separate Windows Python receiver and SSH tunnel.
+- `gpd_vibration` feedback drives ordinary two-motor SDL rumble; focus loss, pause, normal exit and detected disconnection stop feedback.
+- `Back + Start` toggles forwarding; release buttons, triggers and sticks before rearming.
+- Upstream desktop, file and terminal features remain available. Earlier DeckPad receiver/tunnel experiments are not included in this fork.
+
+**User-reported hardware acceptance (2026-10-31):** input, phone-hotspot WAN, display restoration after exit, reconnect and rumble worked on one Windows/Steam Deck pair. Display restoration has a small delay. This is not a compatibility guarantee for every device, game or UU version.
+
+**Getting started:** [Build, Steam launcher and rumble test](contrib/deckpad/README.md#english). Gamepad support is opt-in via `UU_VIEWER_NATIVE_GAMEPAD=1`; the Steam launcher sets it automatically. Set `UU_VIEWER_NATIVE_RUMBLE=0` to disable rumble independently.
+
+**Limits:** one mapped controller, Windows host only; no Guide forwarding, multiple controllers, adaptive triggers or arbitrary touchpad haptic waveforms. Actual feedback depends on Steam / Steam Input settings. Suspend, forced termination and all network-recovery scenarios have not been comprehensively validated.
+
+[Changes and validation](docs/deckpad-fork.md) · [Protocol evidence](docs/deckpad-native-gamepad.md)
+
+---
+
+The original upstream README follows. Its author statements, screenshots, release links and contact details belong to the upstream project.
+
 > **A note first**
 >
 > NetEase UU Remote (网易 UU 远程) is a great remote-desktop tool, but there is no Linux version on its
@@ -648,14 +672,3 @@ assistance and ISO / JIS keyboards have not been tested live.
 
 "—" = not tested yet. Only use reboot/shutdown on machines you can restart. **Not tested live**: H.265 / 4:4:4 with official hosts, multiple monitors. Logs carry field
 numbers, sizes and states only, never keystrokes, clipboard or file contents, codes or credentials.
-
-### Native gamepad and rumble (experimental)
-
-The SDL viewer can send native gamepad input and receive ordinary two-motor rumble through the existing UU desktop connection to a Windows host.
-Opt in with `UU_VIEWER_NATIVE_GAMEPAD=1 target/release/uuremote-viewer ui`; no separate Windows receiver or SSH tunnel is required.
-Set `UU_VIEWER_NATIVE_RUMBLE=0` to disable feedback independently. Only one mapped controller is opened; release all controls before entry/re-entry.
-Back+Start toggles pause. Focus loss, view-only mode and normal exit release input and stop rumble.
-
-Input, phone-hotspot WAN, reconnect and rumble were user-reported working on one Windows/Steam Deck pair; display restoration has a small delay.
-Guide forwarding, multiple controllers and adaptive triggers are not supported. Suspend, forced exit and all network recovery patterns are not comprehensively verified.
-Implementation was assisted by OpenAI Codex and hardware-tested by the user. See [protocol evidence, design and tests](docs/deckpad-native-gamepad.md).

@@ -2,6 +2,30 @@
 
 **简体中文** | [English](README.en.md)
 
+## 本 fork：Steam Deck 原生手柄与震动
+
+本仓库 fork 自 **[VallierDev/uu-remote-linux](https://github.com/VallierDev/uu-remote-linux)**，在原项目的实验性 Linux 控制端上增加 Steam Deck 手柄输入和震动回传。原作者及上游贡献者拥有原项目的贡献署名；沿用 **GPL-3.0-or-later** 许可。
+
+**Codex 修改说明：** 本 fork 的手柄、震动、相关测试及说明由 **OpenAI Codex 协助分析、编写和编辑**；[azuredreamblu-design](https://github.com/azuredreamblu-design) 提供需求并在自己的 Windows + Steam Deck 上实机测试。不是网易或 OpenAI 官方项目，也不代表上游已经合并或认可这些改动。
+
+- Steam Deck 按键、方向键、双摇杆和扳机通过现有 UU 桌面连接发送到 Windows。
+- 使用 UU 原生 `gpd_connect` / `gpd_update` / `gpd_disconnect` 消息；电脑端无需额外启动 Python 接收器或 SSH 隧道。
+- 接收 `gpd_vibration` 并通过 SDL 输出普通双路震动；退出、失焦、暂停和检测到断线时停止反馈。
+- `Back + Start` 可暂停/恢复手柄转发，恢复前需松开按键、扳机和摇杆。
+- 保留原来的远程桌面、文件和终端等功能。早期 DeckPad 独立接收器和隧道实验不包含在这个 fork 中。
+
+**已报告的实测结果（2026-10-31）：** 单台 Windows 主机与 Steam Deck 的原生手柄、手机热点外网、退出后屏幕恢复、重连和震动可用。屏幕恢复仍有轻微延迟。这不是所有硬件、游戏和 UU 版本的兼容性保证。
+
+**开始使用：** [安装、Steam 启动和震动测试](contrib/deckpad/README.md)。手柄功能默认关闭，通过 `UU_VIEWER_NATIVE_GAMEPAD=1` 启用；专用 Steam 启动脚本会自动设置。`UU_VIEWER_NATIVE_RUMBLE=0` 可单独关闭震动。
+
+**限制：** 当前仅支持一个映射手柄和 Windows 被控端；不支持 Guide 键转发、多手柄、自适应扳机或任意触控板触觉波形。Steam / Steam Input 设置会影响实际震感；休眠、强制杀进程及所有断网恢复场景未完成全面验收。
+
+[改动与验证记录](docs/deckpad-fork.md) · [协议证据与技术说明](docs/deckpad-native-gamepad.md)
+
+---
+
+以下保留上游 README；其中作者自述、截图、发布地址和联系渠道属于上游项目。
+
 > **写在前面**
 >
 > 网易 UU 远程非常好用，但官网一直没有 Linux 版本。于是我借助 Claude 和 Codex，写了这个开源的 Linux 被控端：
@@ -568,14 +592,3 @@ Mac 目标使用 macOS 原生键码，Windows / Linux 目标保留 Windows VK。
 | Wayland 下的桌面窗口与剪贴板 | — | — | ✅ Hyprland、KDE；GNOME 窗口正常，剪贴板已于 v0.2.3 改为 SDL 直连（#37，最终版本未重新实机验收） |
 
 「—」表示尚未测试。重启/关机只应在可以重启的机器上使用。**未实测**：官方被控端的 H.265 / 4:4:4、多显示器。日志只记录字段号、大小和状态，不记录键盘、剪贴板、文件内容、验证码或凭据。
-
-### 原生手柄与震动（实验性）
-
-SDL 控制端可以通过现有 UU 桌面连接向 Windows 被控端发送原生手柄输入，并接收普通双路震动反馈。
-默认关闭，用 `UU_VIEWER_NATIVE_GAMEPAD=1 target/release/uuremote-viewer ui` 启用；无需额外 Windows 接收器或 SSH 隧道。
-`UU_VIEWER_NATIVE_RUMBLE=0` 可独立关闭震动。仅打开一个映射手柄；进入/恢复前松开按键、扳机和摇杆。
-`Back + Start` 暂停/恢复。失焦、只读模式及退出会释放输入并停止震动。
-
-已由用户在一组 Windows + Steam Deck 上报告输入、手机热点、重连和震动可用；屏幕恢复稍有延迟。
-不支持 Guide 键、多手柄和自适应扳机。休眠、强制退出与所有断网恢复场景尚未全面验证。
-该功能由 OpenAI Codex 协助实现，并经用户实机测试；详见[协议证据、设计与测试](docs/deckpad-native-gamepad.md)。
