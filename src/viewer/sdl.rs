@@ -162,12 +162,10 @@ impl Window {
         self.chrome.commands.push(command);
     }
     pub fn take_commands(&mut self)->Vec<hud::Command>{std::mem::take(&mut self.chrome.commands)}
-    /// The host starts every session at the official defaults; repeat the saved choices that differ.
+    /// Send one complete saved profile once the desktop is usable. Local menu defaults are not
+    /// proof of remote state; an echo-less playing session must not leave saved FPS unapplied.
     pub fn restore_remote_settings(&mut self){
-        let(st,d)=(&self.chrome.state,hud::State::default());let c=&mut self.chrome.commands;
-        if st.quality!=d.quality {c.push(hud::Command::Quality(st.quality));}
-        if st.fps!=d.fps {c.push(hud::Command::Fps(st.fps));}
-        if st.chroma!=d.chroma {c.push(hud::Command::Chroma(st.chroma));}
+        self.chrome.commands.push(hud::Command::Fps(self.chrome.state.fps));
     }
     pub fn state(&self)->&hud::State{&self.chrome.state}
     pub fn sync_chroma(&mut self,chroma:u32){if chroma!=0 {self.chrome.state.chroma=chroma;}}
@@ -409,13 +407,13 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
         if window.mac{return Err(crate::i18n::s("原生手柄实验仅支持 Windows 被控端","Native gamepad experiment requires a Windows host").into())}
         Some(super::native_gamepad::NativeGamepad::new(&window._sdl,session.peer.rumble.clone())?)
     }else{None};
-    let mut command_open=true;let mut requested=false;let mut type_requested=false;let mut restored=false;
+    let mut command_open=true;let mut requested=false;let mut type_requested=false;
+    let mut startup=super::desktop::StartupGuard::default();
     let mut type_job:Option<TypeJob>=None;
     let mut terminate=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).map_err(|_|"Cannot watch termination")?;
     let mut audio=super::audio::Playback::new(&window._sdl,session.peer.audio.clone());
     let mut input=Input::new(view_only);input.set_mac(window.mac);let mut tick=tokio::time::interval(std::time::Duration::from_millis(8));
     let mut heartbeat=tokio::time::interval(std::time::Duration::from_secs(1));
-    let deadline=tokio::time::sleep(std::time::Duration::from_secs(30));tokio::pin!(deadline);
     window.set_stage(crate::i18n::s("正在传输画面…","Waiting for the remote picture…"));
     if let Some(playback)=audio.as_mut(){playback.volume=window.state().volume;}
     if window.state().grab_keys {window.canvas.window_mut().set_keyboard_grab(true);}
@@ -423,6 +421,7 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
     let mut last=(0u64,0u64,0u64,0u64,std::time::Instant::now());
     let mut codec_name="--";
     let mut video_reporter=super::video_diagnostics::Reporter::new();
+    if super::video_diagnostics::enabled(){eprintln!("DECKPAD_VIDEO_SESSION event=1 elapsed_ms={}",super::video_diagnostics::elapsed_ms());}
     let mut previous_tick=std::time::Instant::now();
     // After a local drop the decoder has no reference picture; P-frames would only smear blocks.
     let mut key_gate=super::desktop::KeyGate::new();
@@ -458,9 +457,8 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
             _=terminate.recv()=>return Ok(()),
             _=tokio::signal::ctrl_c()=>return Ok(()),
             result=session.step()=>result?,
-            _=&mut deadline,if !session.peer.observed.echo_received.load(std::sync::atomic::Ordering::Acquire)=>return Err("CONTROL echo timed out".into()),
             _=heartbeat.tick()=>{
-                if input.enabled() && session.peer.ready(super::rtc::ReadyPolicy::EchoOnly,false){session.peer.send_input(&Input::heartbeat()).await?;}
+                if input.enabled() && session.peer.desktop_ready(window.has_picture()){session.peer.send_input(&Input::heartbeat()).await?;}
                 let o=&session.peer.observed;let s=&super::desktop::STATS;let r=std::sync::atomic::Ordering::Relaxed;
                 log::info!("Viewer desktop stats: control_open={} echo={} media_packets={} access_units={} presented={} decode_errors={}",
                     o.control_open.load(r),o.echo_received.load(r),o.media_packets.load(r),s[0].load(r),s[1].load(r),s[2].load(r));
@@ -486,24 +484,23 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
                 if let Some(playback)=audio.as_mut(){if playback.pump().is_err(){log::warn!("Viewer audio playback stopped");audio=None;}}
                 let (quit,mut messages)=window.poll(&mut input);
                 if !window.has_picture() {window.loading_frame(false);}
-                if !restored && session.peer.ready(super::rtc::ReadyPolicy::EchoOnly,false) {restored=true;window.restore_remote_settings();}
+                if startup.check(session.peer.desktop_ready(window.has_picture()),started.elapsed())? {
+                    if super::video_diagnostics::enabled(){eprintln!("DECKPAD_VIDEO_SESSION event=2 echo={} picture={} control_open=1 elapsed_ms={}",
+                        u8::from(session.peer.observed.echo_received.load(std::sync::atomic::Ordering::Acquire)),u8::from(window.has_picture()),super::video_diagnostics::elapsed_ms());}
+                    window.restore_remote_settings();
+                }
                 for command in window.take_commands() {
                     seq+=1;
                     let capture_command=matches!(command,hud::Command::Quality(_)|hud::Command::Fps(_)|hud::Command::Chroma(_)|hud::Command::FollowRemote(_));
-                    if super::video_diagnostics::enabled(){match command {
-                        hud::Command::Fps(f)=>eprintln!("DECKPAD_VIDEO_REQUEST fps={f} request_id={seq} elapsed_ms={}",super::video_diagnostics::elapsed_ms()),
-                        hud::Command::Chroma(c)=>eprintln!("DECKPAD_VIDEO_REQUEST chroma={c} request_id={seq} elapsed_ms={}",super::video_diagnostics::elapsed_ms()),
-                        hud::Command::Quality(q)=>eprintln!("DECKPAD_VIDEO_REQUEST quality={q} request_id={seq} elapsed_ms={}",super::video_diagnostics::elapsed_ms()),
-                        hud::Command::FollowRemote(b)=>eprintln!("DECKPAD_VIDEO_REQUEST follow_remote={} request_id={seq} elapsed_ms={}",u8::from(b),super::video_diagnostics::elapsed_ms()),
-                        _=>{},
-                    }}
+                    let (profile_seq,fps,quality,chroma)=(seq,window.state().fps,window.state().quality,window.state().chroma);
+                    let profile=|extra:&[(u32,u64)]|super::wire::capture_profile(profile_seq,fps,quality,chroma,extra);
+                    if capture_command && super::video_diagnostics::enabled(){eprintln!("DECKPAD_VIDEO_REQUEST fps={} quality={} chroma={} request_id={seq} elapsed_ms={}",
+                        window.state().fps,window.state().quality,window.state().chroma,super::video_diagnostics::elapsed_ms());}
                     let control=match command {
-                        hud::Command::Quality(q)=>Some(super::wire::capture_setting(seq,&[(2,q)])),
-                        hud::Command::Fps(f)=>Some(super::wire::capture_setting(seq,&[(1,match f{30=>1,60=>2,90=>3,_=>4}),(18,u64::from(f))])),
-                        hud::Command::Chroma(c)=>Some(super::wire::capture_setting(seq,&[(7,u64::from(c))])),
-                        hud::Command::FollowRemote(true)=>Some(super::wire::capture_setting(seq,&[(10,3)])),
+                        hud::Command::Quality(_)|hud::Command::Fps(_)|hud::Command::Chroma(_)=>Some(profile(&[])),
+                        hud::Command::FollowRemote(true)=>Some(profile(&[(10,3)])),
                         hud::Command::FollowRemote(false)=>{let (w,h)=window.window_size();let (w,h)=(u64::from(w&!1),u64::from(h&!1));
-                            Some(super::wire::capture_setting(seq,&[(5,w),(6,h),(16,w),(17,h)]))},
+                            Some(profile(&[(5,w),(6,h),(16,w),(17,h)]))},
                         // 远程结束后自动锁屏: SimpleAction 19, value 2 = on, 1 = off.
                         hud::Command::AutoLock(on)=>Some(super::wire::simple_action(seq,19,Some(if on {2} else {1}))),
                         // 静音运行: on = SimpleAction 14 then 18, off = 16 (src/system_actions.rs).
@@ -565,12 +562,12 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
                 }
                 if let Some(pad)=native_gamepad.as_mut(){
                     let active=!quit&&window.focused&&input.enabled()&&!window.chrome.menu.open&&type_job.is_none()
-                        &&session.peer.ready(super::rtc::ReadyPolicy::EchoOnly,false)
+                        &&session.peer.desktop_ready(window.has_picture())
                         &&session.peer.observed.control_open.load(std::sync::atomic::Ordering::Acquire)
                         &&session.peer.pc.connection_state()==webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState::Connected;
                     messages.extend(pad.poll(active));
                 }
-                if session.peer.ready(super::rtc::ReadyPolicy::EchoOnly,false){for m in messages{session.peer.send_input(&m).await?;}}
+                if session.peer.desktop_ready(window.has_picture()){for m in messages{session.peer.send_input(&m).await?;}}
                 else {input.release_all();}
                 if quit{return Ok(())}
                 if let Some(codec)=super::desktop::pump(&session.peer.desktop,decoder,window,&mut key_gate)? {
@@ -579,6 +576,10 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
             }
         }}
     }.await;
+    if super::video_diagnostics::enabled(){
+        let reason=match result.as_ref().err().map(String::as_str){None=>0,Some("Desktop startup timed out")=>1,Some("Signaling room closed")=>2,Some("Remote session released")=>3,Some(_)=>4};
+        eprintln!("DECKPAD_VIDEO_SESSION event=3 reason={reason} elapsed_ms={}",super::video_diagnostics::elapsed_ms());
+    }
     if let Some(frame)=window.last_frame.as_ref() {if let Err(e)=super::thumbs::save(device,frame){log::debug!("Viewer thumbnail not saved: {e}");}}
     #[cfg(uu_gtk)] if let Some(f)=files {f.abort();let _=f.await;super::tools_ui::hide();session.peer.tools.lock().unwrap().take();}
     if let Some(t)=type_ipc {t.abort();let _=t.await;}

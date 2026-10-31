@@ -221,6 +221,13 @@ pub fn capture_setting(seq:u64,fields:&[(u32,u64)])->Vec<u8>{
     let mut rpc=Vec::new();bytes(1,&header,&mut rpc);bytes(2,&setting,&mut rpc);
     envelope(seq,21,&rpc)
 }
+/// Preserve the selected FPS/chroma when changing quality or resolution. The owner's Windows
+/// trace drops from 60 to 30 after a quality-only request (field 2 = 4); the menu still said 144.
+/// Use the existing observed fields together, without implicitly changing display topology.
+pub fn capture_profile(seq:u64,fps:u32,quality:u64,chroma:u32,extra:&[(u32,u64)])->Vec<u8>{
+    let mut fields=vec![(1,match fps{30=>1,60=>2,90=>3,_=>4}),(18,u64::from(fps)),(2,quality),(7,u64::from(chroma))];
+    fields.extend_from_slice(extra);capture_setting(seq,&fields)
+}
 /// Message 3 SimpleAction {1 action, 5 value} as the official 安全 menu sends it.
 pub fn simple_action(seq:u64,action:u64,value:Option<u64>)->Vec<u8>{
     let mut body=Vec::new();int(1,action,&mut body);if let Some(v)=value {int(5,v,&mut body);}
@@ -243,6 +250,22 @@ pub fn media_control(data:&[u8])->(Option<u32>,Option<u32>){
 
 #[cfg(test)] mod video_tests {
     use super::*;
+    #[test] fn capture_profile_keeps_fps_explicit_across_quality_and_chroma_changes(){
+        for (fps,quality,chroma) in [(144,5,1),(144,4,1),(144,4,3),(90,4,3),(60,3,1),(30,2,1)] {
+            let request=capture_profile(73,fps,quality,chroma,&[]);
+            let rpc=super::super::tools::blob(&request,21).unwrap();
+            let setting=super::super::tools::blob(rpc,2).unwrap();
+            assert_eq!(super::super::tools::uint(setting,18),u64::from(fps));
+            assert_eq!(super::super::tools::uint(setting,1),match fps{30=>1,60=>2,90=>3,_=>4});
+            assert_eq!(super::super::tools::uint(setting,2),quality);
+            assert_eq!(super::super::tools::uint(setting,7),u64::from(chroma));
+            assert_eq!(decode_wire(setting).unwrap().len(),4,"ordinary quality changes must not resize the host display");
+        }
+        let request=capture_profile(74,144,4,1,&[(10,3)]);
+        let setting=super::super::tools::blob(super::super::tools::blob(&request,21).unwrap(),2).unwrap();
+        assert_eq!(super::super::tools::uint(setting,18),144);
+        assert_eq!(super::super::tools::uint(setting,10),3);
+    }
     #[test] fn decoder_caps_cover_both_codecs_and_chroma_and_force_h264(){
         let original:Shape=serde_json::from_str(include_str!("../../tests/fixtures/viewer/session-shape.json")).unwrap();
         for force in [false,true] {

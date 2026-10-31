@@ -1,5 +1,13 @@
 # Receive-rate decline diagnostics / 接收速率下降诊断
 
+Follow-up: the v0.2 owner report correlated a quality-only request with a clean
+60-to-30 incoming RTP transition and exposed the desktop echo startup timeout.
+See [desktop startup/profile corrections](steamdeck-desktop-startup.md). The
+observations below explain why the additional diagnostics were introduced.
+
+后续 v0.2 日志已将画质单字段请求与 60→30 帧输入变化对齐，并发现桌面 echo 启动超时，
+详见[桌面启动与请求修正](steamdeck-desktop-startup.md)。
+
 ## Retest evidence / 实机结果
 
 After the batch scheduling fix, the owner's report included 143 complete access

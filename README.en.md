@@ -6,6 +6,8 @@
 
 This fix branch includes [high-rate video receive scheduling](docs/steamdeck-video-scheduling.md) and optional [video-stage counters](docs/steamdeck-video-diagnostics.md). A hardware retest reached 139 decoded and 119 submitted pictures/s, then complete received units fell to about 30/s; the later decline is still under investigation. [Pre-depacketization RTP counters and settings timelines](docs/steamdeck-video-rate-drop.md) help distinguish the remaining causes.
 
+Later evidence exposed a 30-second echo timeout terminating playing video, saved FPS never being sent, and a quality-only change followed by 30 FPS incoming video. [Desktop readiness and complete capture profiles](docs/steamdeck-desktop-startup.md) address these paths without fabricating echo/capability state; these follow-up changes still need Windows-host validation.
+
 Forked from **[VallierDev/uu-remote-linux](https://github.com/VallierDev/uu-remote-linux)**. This fork extends the upstream experimental Linux viewer with Steam Deck gamepad input and rumble feedback. Credit for the original project remains with its authors and contributors; the **GPL-3.0-or-later** license is preserved.
 
 **Codex attribution:** **OpenAI Codex assisted with analysis, implementation, tests and documentation** for this fork's gamepad and rumble changes. [azuredreamblu-design](https://github.com/azuredreamblu-design) supplied requirements and performed Windows + Steam Deck hardware testing. This is not an official NetEase or OpenAI project and does not imply upstream endorsement or acceptance.

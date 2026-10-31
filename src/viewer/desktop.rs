@@ -7,6 +7,18 @@ impl Default for Desktop {
     // Eight units cover a short UI redraw at 144 fps; persistent overload still requests recovery.
     fn default()->Self {Self{units:Latest::new(8),pli:Arc::new(AtomicBool::new(false)),reset:Arc::new(AtomicBool::new(false)),ssrc:Arc::new(AtomicU32::new(0))}}
 }
+/// A startup timeout must not terminate a desktop that has already established a usable path.
+#[derive(Default)]
+pub struct StartupGuard {established:bool}
+impl StartupGuard {
+    /// Returns true exactly once, so preferences are restored once even if echo arrives later.
+    pub fn check(&mut self,ready:bool,elapsed:std::time::Duration)->Result<bool,String>{
+        if self.established {return Ok(false)}
+        if ready {self.established=true;return Ok(true)}
+        if elapsed>=std::time::Duration::from_secs(30){return Err("Desktop startup timed out".into())}
+        Ok(false)
+    }
+}
 /// `content` is the source picture size inside the (possibly padded) RGB canvas; None = full frame.
 pub struct Frame { pub width:u32, pub height:u32, pub rgb:Vec<u8>, pub content:Option<(u32,u32)> }
 pub trait Decoder { fn set_codec(&mut self,codec:super::media::Codec)->Result<(),String>; fn decode(&mut self, au:&[u8])->Result<Vec<Frame>,String>; fn reset(&mut self);
@@ -124,6 +136,20 @@ pub fn pump(desktop:&Desktop,decoder:&mut dyn Decoder,sink:&mut dyn FrameSink,ga
     Ok(codec)
 }
 #[cfg(test)] mod tests {
+    #[test] fn playing_desktop_survives_startup_deadline_and_restores_only_once(){
+        use std::time::Duration;
+        let mut guard=super::StartupGuard::default();let mut restores=0;
+        // Owner trace: picture starts at ~8 s, no matching echo, healthy video through 30 s.
+        for second in 0..=120 {
+            restores+=usize::from(guard.check(second>=8,Duration::from_secs(second)).unwrap());
+        }
+        assert_eq!(restores,1);
+        // A later transient control loss is not a fresh startup timeout.
+        assert!(!guard.check(false,Duration::from_secs(121)).unwrap());
+        let mut silent=super::StartupGuard::default();
+        assert!(!silent.check(false,Duration::from_millis(29999)).unwrap());
+        assert_eq!(silent.check(false,Duration::from_secs(30)).unwrap_err(),"Desktop startup timed out");
+    }
     #[test] fn key_frames_by_nal_type(){
         use crate::viewer::media::Codec;
         assert!(super::is_key_frame(Codec::H264,&[0,0,0,1,0x67,1,0,0,0,1,0x68,2,0,0,0,1,0x65,3]));

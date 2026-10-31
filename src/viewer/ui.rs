@@ -41,14 +41,16 @@ fn watch_session(mut child: tokio::process::Child, mut cancel: tokio::sync::ones
         let _ = tokio::time::timeout(Duration::from_millis(200), async {
             if let Some(lines) = lines.as_mut() {
                 while let Ok(Some(l)) = lines.next_line().await {
-                    if !l.starts_with('[') && !l.trim().is_empty() { last = l.chars().take(160).collect(); }
+                    if l.starts_with("DECKPAD_"){eprintln!("{l}");}
+                    else if !l.starts_with('[') && !l.trim().is_empty() { last = l.chars().take(160).collect(); }
                 }
             }
         }).await;
         if !status.is_ok_and(|s| s.success()) {
             let reason = match last.as_str() {
                 "" => crate::i18n::s("连接已断开","Disconnected").to_owned(),
-                "CONTROL echo timed out" => crate::i18n::s("连接超时：被控端没有响应（官方主机互通尚未完成）","Timed out: the remote device did not answer (official host interop is not finished)").to_owned(),
+                "CONTROL echo timed out" => crate::i18n::s("连接超时：未收到控制通道回应","Timed out: no control-channel echo reply").to_owned(),
+                "Desktop startup timed out" => crate::i18n::s("连接超时：未建立可用的桌面会话","Timed out: no usable desktop session was established").to_owned(),
                 "Remote session released" => crate::i18n::s("被控端结束了本次连接","The remote device ended the connection").to_owned(),
                 other => other.to_owned(),
             };

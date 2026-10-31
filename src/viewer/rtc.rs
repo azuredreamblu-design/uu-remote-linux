@@ -41,6 +41,14 @@ pub struct Observed {
     pub video_received:AtomicU64,
     pub video_expected:AtomicU64,
 }
+impl Observed {
+    /// A decoded desktop picture on this authenticated peer is also evidence of startup.
+    /// Keep echo/feature negotiation distinct; tools and secure type still require their echo.
+    fn desktop_ready(&self,connected:bool,picture:bool)->bool {
+        connected && self.control_open.load(Ordering::Acquire)
+            && (self.echo_received.load(Ordering::Acquire) || picture)
+    }
+}
 pub struct Peer {
     clipboard:super::clipboard::Bridge,
     pub tools:super::tools::Inbox,
@@ -318,6 +326,9 @@ impl Peer {
     pub fn ready(&self,policy:ReadyPolicy,explicit:bool)->bool {
         self.observed.echo_received.load(Ordering::Acquire) && match policy {ReadyPolicy::EchoOnly=>true,ReadyPolicy::Explicit=>explicit}
     }
+    pub fn desktop_ready(&self,picture:bool)->bool {
+        self.observed.desktop_ready(self.pc.connection_state()==webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState::Connected,picture)
+    }
     pub async fn send_input(&self,value:&Value)->Result<(),String> {
         let channel=&self.channels[0];
         if channel.ready_state()!=webrtc::data_channel::data_channel_state::RTCDataChannelState::Open {return Err("CONTROL is not open".into())}
@@ -359,6 +370,21 @@ fn answer_sdp(body:&Value)->Result<String,String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn decoded_desktop_requires_connected_peer_and_open_control_without_faking_echo(){
+        let o=Observed::default();
+        o.media_packets.store(1000,Ordering::Relaxed);
+        assert!(!o.desktop_ready(true,true));
+        o.control_open.store(true,Ordering::Release);
+        assert!(!o.desktop_ready(false,true));
+        assert!(!o.desktop_ready(true,false));
+        assert!(o.desktop_ready(true,true));
+        assert!(!o.echo_received.load(Ordering::Acquire));
+        assert!(!o.clipboard_supported.load(Ordering::Acquire));
+        o.echo_received.store(true,Ordering::Release);
+        assert!(o.desktop_ready(true,false));
+        o.control_open.store(false,Ordering::Release);
+        assert!(!o.desktop_ready(true,true));
+    }
     #[test]
     fn compressed_answers_are_supported_and_bounded() {
         use base64::Engine;use std::io::Write;
