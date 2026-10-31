@@ -6,3 +6,6 @@ target/
 /docs/validation/
 /docs/ACTIVE_HANDOFF.md
 /contrib/tests/
+
+# DeckPad launcher bytecode stays local
+/contrib/deckpad/__pycache__/
