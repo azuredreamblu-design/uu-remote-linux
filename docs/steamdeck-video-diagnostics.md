@@ -4,7 +4,10 @@ This branch includes opt-in counters for the native viewer. Set
 `UU_VIEWER_VIDEO_DIAGNOSTICS=1` before launching the viewer. The packaged Steam Deck
 launcher sets this automatically and enables the network panel for that run.
 See [the scheduling fix](steamdeck-video-scheduling.md) for the subsequently identified
-queue-overflow defect and its regression tests. Post-fix hardware acceptance is pending.
+queue-overflow defect and its regression tests. A subsequent hardware retest briefly
+reached 139 decoded pictures/s, then complete receive rate fell to about 30/s.
+See [receive-rate decline diagnostics](steamdeck-video-rate-drop.md) for additional
+RTP counters and the remaining investigation; sustained acceptance is still pending.
 
 设置 `UU_VIEWER_VIDEO_DIAGNOSTICS=1` 可开启诊断。测试包会自动开启，并保留原生手柄及震动。
 当前安装包使用外部 FFmpeg 解码；保留帧率请求、解码参数及 Windows 显示配置逻辑。

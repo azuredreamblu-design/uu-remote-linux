@@ -474,7 +474,7 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
                 window.set_net(hud::NetStats{elapsed:started.elapsed().as_secs(),route,fps:((now.0-last.0) as f64/secs).round() as u32,
                     kbps:(now.1-last.1) as f64*8./1000./secs,rtt_ms,loss:if expected>0 {lost as f64*100./expected as f64} else {0.},size,
                     codec:codec_name,chroma:window.state().chroma,
-                    video:video_reporter.sample(window.state().fps,window.focused,window.chrome.menu.open)});
+                    video:video_reporter.sample(window.state().fps,window.state().quality,window.focused,window.chrome.menu.open)});
                 last=now;
                 if std::time::Instant::now()>=next_thumb { if let Some(frame)=window.last_frame.as_ref() {
                     if let Err(e)=super::thumbs::save(device,frame){log::debug!("Viewer thumbnail not saved: {e}");}
@@ -489,9 +489,12 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
                 if !restored && session.peer.ready(super::rtc::ReadyPolicy::EchoOnly,false) {restored=true;window.restore_remote_settings();}
                 for command in window.take_commands() {
                     seq+=1;
+                    let capture_command=matches!(command,hud::Command::Quality(_)|hud::Command::Fps(_)|hud::Command::Chroma(_)|hud::Command::FollowRemote(_));
                     if super::video_diagnostics::enabled(){match command {
-                        hud::Command::Fps(f)=>eprintln!("DECKPAD_VIDEO_REQUEST fps={f}"),
-                        hud::Command::Chroma(c)=>eprintln!("DECKPAD_VIDEO_REQUEST chroma={c}"),
+                        hud::Command::Fps(f)=>eprintln!("DECKPAD_VIDEO_REQUEST fps={f} request_id={seq} elapsed_ms={}",super::video_diagnostics::elapsed_ms()),
+                        hud::Command::Chroma(c)=>eprintln!("DECKPAD_VIDEO_REQUEST chroma={c} request_id={seq} elapsed_ms={}",super::video_diagnostics::elapsed_ms()),
+                        hud::Command::Quality(q)=>eprintln!("DECKPAD_VIDEO_REQUEST quality={q} request_id={seq} elapsed_ms={}",super::video_diagnostics::elapsed_ms()),
+                        hud::Command::FollowRemote(b)=>eprintln!("DECKPAD_VIDEO_REQUEST follow_remote={} request_id={seq} elapsed_ms={}",u8::from(b),super::video_diagnostics::elapsed_ms()),
                         _=>{},
                     }}
                     let control=match command {
@@ -511,7 +514,11 @@ pub async fn run(session:&mut Session,window:&mut Window,decoder:&mut dyn super:
                         hud::Command::Disconnect=>return Ok(()),
                         _=>None,
                     };
-                    if let Some(data)=control { if let Err(e)=session.peer.send_control(data).await {log::warn!("Viewer control command not sent: {e}");} }
+                    if let Some(data)=control {
+                        let result=session.peer.send_control(data).await;
+                        if capture_command && super::video_diagnostics::enabled(){eprintln!("DECKPAD_VIDEO_REQUEST sent={} request_id={seq} elapsed_ms={}",u8::from(result.is_ok()),super::video_diagnostics::elapsed_ms());}
+                        if let Err(e)=result {log::warn!("Viewer control command not sent: {e}");}
+                    }
                 }
                 window.poll_clipboard();
                 requested|=std::mem::take(&mut window.files);

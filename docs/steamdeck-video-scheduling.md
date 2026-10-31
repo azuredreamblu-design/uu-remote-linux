@@ -53,3 +53,15 @@ frames each second. Do not call the issue fully fixed until the owner retests it
 
 实机验收应关注：启动稳定后接收与送解码计数大致相等，压缩队列溢出和关键帧等待不再
 持续增长。显示帧率还受实际解码、渲染和屏幕刷新率影响，须回收新日志确认。
+
+### Subsequent retest / 后续实机复测
+
+The v0.1 scheduling build reached 139 decoded and 119 submitted pictures/s in one
+sample. It later received only about 30 complete units/s while the game continued
+moving; decode/presentation kept up with those units. The sustained local queue
+overflow improved, but the later receive-rate decline remains unresolved. See
+[receive-rate diagnostics](steamdeck-video-rate-drop.md). The acceptance criteria
+above remain targets, not a claim of sustained success.
+
+v0.1 曾达到解码 139、提交显示 119 帧/秒；随后接收完整帧降至约 30，游戏仍在运动。
+旧的持续队列溢出得到改善，后续接收率下降尚未解决；上述标准仍为验收目标。

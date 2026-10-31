@@ -4,7 +4,7 @@
 
 ## This fork: native Steam Deck gamepad and rumble
 
-This fix branch includes [high-rate video receive scheduling](docs/steamdeck-video-scheduling.md) and optional [video-stage counters](docs/steamdeck-video-diagnostics.md). It addresses confirmed queue overflow from consuming one unit per 8 ms tick; post-fix Steam Deck hardware acceptance is pending.
+This fix branch includes [high-rate video receive scheduling](docs/steamdeck-video-scheduling.md) and optional [video-stage counters](docs/steamdeck-video-diagnostics.md). A hardware retest reached 139 decoded and 119 submitted pictures/s, then complete received units fell to about 30/s; the later decline is still under investigation. [Pre-depacketization RTP counters and settings timelines](docs/steamdeck-video-rate-drop.md) help distinguish the remaining causes.
 
 Forked from **[VallierDev/uu-remote-linux](https://github.com/VallierDev/uu-remote-linux)**. This fork extends the upstream experimental Linux viewer with Steam Deck gamepad input and rumble feedback. Credit for the original project remains with its authors and contributors; the **GPL-3.0-or-later** license is preserved.
 

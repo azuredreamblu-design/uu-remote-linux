@@ -122,6 +122,7 @@ impl Peer {
                 let mut tick=tokio::time::interval(std::time::Duration::from_millis(40));
                 let mut last_pli=std::time::Instant::now()-std::time::Duration::from_secs(1);
                 let mut span:Option<(u16,u64)>=None;
+                let mut packet_probe=super::video_diagnostics::PacketProbe::default();
                 loop {
                     let output=tokio::select! {
                         packet=track.read_rtp()=>match packet {
@@ -129,6 +130,7 @@ impl Peer {
                                 counters.media_packets.fetch_add(1,Ordering::Relaxed);
                                 counters.media_bytes.fetch_add(p.payload.len() as u64+12,Ordering::Relaxed);
                                 if video {
+                                    packet_probe.packet(p.header.sequence_number,p.header.timestamp,p.header.marker,p.payload.len());
                                     // Extended sequence span: forward steps add, reordered/old packets do not.
                                     let seq=p.header.sequence_number;
                                     let (last,expected)=span.unwrap_or((seq.wrapping_sub(1),0));
