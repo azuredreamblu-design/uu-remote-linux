@@ -4,9 +4,7 @@
 
 ## 本 fork：Steam Deck 原生手柄与震动
 
-本修复分支包含[高帧率接收调度修正](docs/steamdeck-video-scheduling.md)和可选的[视频分阶段计数](docs/steamdeck-video-diagnostics.md)。实机复测曾达到每秒解码 139 帧、提交显示 119 帧；随后接收到的完整帧降到约 30，原因仍在排查。新增组帧前 RTP 数值计数和设置请求时间线，详见[接收速率下降诊断](docs/steamdeck-video-rate-drop.md)。
-
-后续日志定位到已播放视频仍被 30 秒 echo 超时关闭、保存的帧率未发送，以及仅改画质后输入流降至 30 帧的情况。现调整[桌面就绪判定与完整画质请求](docs/steamdeck-desktop-startup.md)，保留真实的 echo/功能协商状态；这些后续修正仍待 Windows 主机实测。
+本 fork 已整合[视频队列调度](docs/steamdeck-video-scheduling.md)、[桌面启动与完整画质设置修复](docs/steamdeck-desktop-startup.md)，以及可选的[数值诊断](docs/steamdeck-video-diagnostics.md)。2026-10-31 的 v0.3 实机复测运行约 4 分 35 秒并正常结束，切到 60 FPS 后大部分接收/解码接近 60，压缩队列溢出为零。仍出现过一次短暂解码中断后恢复；持续 90/144 FPS 和长时间稳定性尚未验证。详见[修复与验收记录](docs/steamdeck-video-acceptance.md)。
 
 本仓库 fork 自 **[VallierDev/uu-remote-linux](https://github.com/VallierDev/uu-remote-linux)**，在原项目的实验性 Linux 控制端上增加 Steam Deck 手柄输入和震动回传。原作者及上游贡献者拥有原项目的贡献署名；沿用 **GPL-3.0-or-later** 许可。
 

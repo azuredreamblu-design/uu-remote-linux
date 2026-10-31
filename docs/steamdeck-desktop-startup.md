@@ -24,7 +24,7 @@ implementation. Existing protocol fields are documented in `capture_setting.rs`.
 
 同一个 echo 门槛还阻止了保存设置的恢复。日志里的 requested_fps=144 只是本地选项。
 19.166 秒发送仅含 quality=4 的请求后，接收到的 RTP 帧节奏降为约 30，序号基本连续。
-本次让请求携带完整帧率/画质/色度，避免依赖主机保留省略的字段；实机效果仍待确认。
+本次让请求携带完整帧率/画质/色度，避免依赖主机保留省略的字段；后续复测结果见[验收记录](steamdeck-video-acceptance.md)。
 
 ## Changes / 改动
 
@@ -66,8 +66,9 @@ A no-ready case must still fail at 30 seconds. Readiness tests reject unopened
 CONTROL, disconnected peers and packet counts without pictures/echo. Wire tests
 assert explicit FPS survives quality/chroma changes without unsolicited display
 size fields. Collector tests isolate repeated desktop children and their final
-reason markers. Actual Windows-host FPS preservation and >30-second operation
-remain pending owner retest.
+reason markers. The subsequent owner retest exceeded 30 seconds and mostly tracked the selected
+60 FPS; see the bounded [acceptance record](steamdeck-video-acceptance.md). Sustained
+high-rate operation remains unverified.
 
 复测：保持 144 FPS，持续运行至少 60 秒，再切一次画质，继续 10 秒后导出报告。
 如中途断开，直接导出同一份报告；SESSION 结束码用于进一步定位。

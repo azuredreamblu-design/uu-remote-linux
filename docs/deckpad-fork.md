@@ -16,6 +16,7 @@
 - Peer-local bounded rumble inbox, finite SDL effects, stop on pause/focus loss/detected disconnection.
 - Native protocol/range/state tests and virtual WebRTC input/feedback alongside file RPCs.
 - Portable Steam launcher and one-time Windows XInput rumble test under `contrib/deckpad`.
+- Batched video decoding, desktop startup and full capture-profile fixes, opt-in numeric diagnostics and a filtered report collector; see [video acceptance](steamdeck-video-acceptance.md).
 
 The earlier custom Python receiver, reverse SSH tunnel and shared port-mapping experiment are excluded from this fork. The native Rust input and rumble implementations are carried from the tested v0.5.1 package; the repository launcher is adapted to source builds and XDG state paths.
 

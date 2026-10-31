@@ -1,6 +1,7 @@
 """Supervise the native viewer; gamepad lives inside its SDL desktop process."""
 import fcntl
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -12,7 +13,7 @@ from lifecycle import stop_desktops, stop_process
 
 ROOT = Path(__file__).resolve().parent
 VIEWER = Path(os.environ.get("UU_VIEWER_BIN", str(ROOT.parents[1] / "target/release/uuremote-viewer"))).expanduser().resolve()
-STATE = Path(os.environ.get("UU_DECKPAD_STATE_DIR", str(Path.home() / ".local/state/uu-remote-linux/deckpad")))
+STATE = Path(os.environ.get("UU_DECKPAD_STATE_DIR", str(Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "uu-remote-linux/deckpad")))
 
 
 def diagnostic(line):
@@ -23,6 +24,8 @@ def diagnostic(line):
              "DECKPAD_NATIVE_PAUSED", "DECKPAD_NATIVE_RESUMING",
              "DECKPAD_RUMBLE_ENABLED", "DECKPAD_RUMBLE_SUPPORTED", "DECKPAD_RUMBLE_UNAVAILABLE",
              "DECKPAD_RUMBLE_RECEIVED", "DECKPAD_RUMBLE_APPLIED", "DECKPAD_RUMBLE_OUTPUT_FAILED"}
+    if len(text) <= 2048 and re.fullmatch(r"DECKPAD_VIDEO_(?:SAMPLE|NETWORK|SYNC|REPLY|REQUEST|RENDERER|SESSION)(?: [a-z_]+=[0-9]+){1,32}", text):
+        return text
     if text in fixed:
         return text
     return None

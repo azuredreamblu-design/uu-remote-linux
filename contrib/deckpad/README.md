@@ -44,7 +44,9 @@ UU_VIEWER_BIN=/absolute/path/to/uuremote-viewer %command%
 - 分别测试正常退出、重连及手机热点。休眠/强制退出/突然断网仍需要更多硬件验收。
 
 日志默认在 `~/.local/state/uu-remote-linux/deckpad/session.log`，遵循 `XDG_STATE_HOME`，也可用 `UU_DECKPAD_STATE_DIR` 覆盖。
-日志仅允许固定的手柄/震动状态标记，不记录按键报告、震动数值或账号令牌。
+日志仅允许固定的手柄/震动状态标记及开启诊断后的数值视频标记，不记录按键报告、震动数值或账号令牌。
+
+排查视频时，在 Steam 启动选项设置 `UU_VIEWER_VIDEO_DIAGNOSTICS=1 %command%`。复现后运行 `python3 /absolute/path/to/repository/contrib/deckpad/collect_diagnostics.py`，仅导出最近桌面会话的数值报告。详见[诊断说明](../../docs/steamdeck-video-diagnostics.md)。
 
 `DECKPAD_RUMBLE_RECEIVED` 表示收到有效回传；`DECKPAD_RUMBLE_APPLIED` 表示 SDL 接受了输出。仍以实际震感为准。
 `DECKPAD_RUMBLE_OUTPUT_FAILED` 表示本地输出失败，输入继续工作；检查 Steam Input 震动配置后重启入口。
@@ -68,3 +70,5 @@ The launcher defaults to `target/release/uuremote-viewer`. To override it, set S
 Verify input in Windows `joy.cpl`. For a one-time rumble test run `test_rumble.cmd` on Windows while the Deck is connected; refocus the Deck viewer during its eight-second delay. It sends separate 35% motor pulses, then both at 45%, and stops in `finally`. With several XInput devices choose the correct slot explicitly using `-ControllerIndex`. The script is not required for gameplay. Actual feedback depends on hardware and Steam Input settings.
 
 Logs default to `~/.local/state/uu-remote-linux/deckpad/session.log`, respecting `XDG_STATE_HOME` or `UU_DECKPAD_STATE_DIR`. `DECKPAD_RUMBLE_RECEIVED` means valid feedback arrived; `DECKPAD_RUMBLE_APPLIED` means SDL accepted it, not proof of physical vibration. Exit, reconnect, WAN and game-specific feedback should be checked on your own devices. Never upload credentials or raw input reports.
+
+For video diagnostics set Steam launch options to `UU_VIEWER_VIDEO_DIAGNOSTICS=1 %command%`. After reproducing, run `python3 /absolute/path/to/repository/contrib/deckpad/collect_diagnostics.py` to export only the latest desktop session numeric report. The source launcher keeps this feature opt-in.

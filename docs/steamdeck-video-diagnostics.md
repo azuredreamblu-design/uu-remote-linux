@@ -11,7 +11,7 @@ RTP counters and the remaining investigation; sustained acceptance is still pend
 
 设置 `UU_VIEWER_VIDEO_DIAGNOSTICS=1` 可开启诊断。测试包会自动开启，并保留原生手柄及震动。
 当前安装包使用外部 FFmpeg 解码；保留帧率请求、解码参数及 Windows 显示配置逻辑。
-已增加批量消费修正，修复后表现尚需 Steam Deck 实机验收，不能宣称支持 144 Hz 显示。
+已增加批量消费修正；最新实测范围见[验收记录](steamdeck-video-acceptance.md)，不能宣称支持 144 Hz 显示。
 
 | Field / 字段 | Meaning / 含义 |
 | --- | --- |
@@ -42,4 +42,4 @@ No desktop frames, input, clipboard data, account IDs or authentication material
 are recorded by this feature. Existing upstream stderr must still be filtered by
 the package launcher; do not publish unfiltered upstream logs.
 
-The publication handoff/main branch is unchanged. This branch is for the scheduling fix and diagnosis.
+The fixes are integrated into this fork. See [current acceptance evidence](steamdeck-video-acceptance.md). The source launcher preserves numeric markers when diagnostics are explicitly enabled; unlike the earlier downloadable test installer, it does not enable diagnostics by default.
